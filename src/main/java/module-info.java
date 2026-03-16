@@ -2,6 +2,7 @@ module org.example.wavelio {
     requires javafx.controls;
     requires javafx.fxml;
     requires javafx.media;
+    requires java.sql;
 
 
     opens org.example.wavelio to javafx.fxml;

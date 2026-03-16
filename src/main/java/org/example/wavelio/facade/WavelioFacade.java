@@ -1,5 +1,6 @@
 package org.example.wavelio.facade;
 
+import org.example.wavelio.model.LibraryEntry;
 import org.example.wavelio.model.WavMetadata;
 
 import java.nio.file.Path;
@@ -24,7 +25,7 @@ public interface WavelioFacade {
 
     void saveFile(Path path);
 
-    List<?> getLibraryEntries();
+    List<LibraryEntry> getLibraryEntries();
 
     Optional<double[]> getWaveformData();
 }

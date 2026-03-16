@@ -2,12 +2,17 @@ package org.example.wavelio.facade;
 
 import javafx.concurrent.Task;
 import org.example.wavelio.bus.EventBus;
+import org.example.wavelio.db.DatabaseConfig;
 import org.example.wavelio.events.ErrorEvent;
 import org.example.wavelio.events.FileLoadedEvent;
+import org.example.wavelio.model.LibraryEntry;
 import org.example.wavelio.model.WavMetadata;
+import org.example.wavelio.repository.AnalysisHistoryRepository;
+import org.example.wavelio.repository.LibraryRepository;
+import org.example.wavelio.repository.SqliteAnalysisHistoryRepository;
+import org.example.wavelio.repository.SqliteLibraryRepository;
 
 import java.nio.file.Path;
-import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
@@ -18,21 +23,39 @@ public final class WavelioFacadeImpl implements WavelioFacade {
 
     private final EventBus eventBus;
     private final ExecutorService executor;
+    private final LibraryRepository libraryRepository;
+    private final AnalysisHistoryRepository analysisHistoryRepository;
 
     private volatile WavMetadata currentMetadata;
     private volatile double[] waveformData;
 
-    public WavelioFacadeImpl(EventBus eventBus, ExecutorService executor) {
+    public WavelioFacadeImpl(
+        EventBus eventBus,
+        ExecutorService executor,
+        LibraryRepository libraryRepository,
+        AnalysisHistoryRepository analysisHistoryRepository
+    ) {
         this.eventBus = eventBus;
         this.executor = executor;
+        this.libraryRepository = libraryRepository;
+        this.analysisHistoryRepository = analysisHistoryRepository;
     }
 
     public static WavelioFacadeImpl create(EventBus eventBus) {
-        return new WavelioFacadeImpl(eventBus, Executors.newCachedThreadPool(r -> {
+        DatabaseConfig config = DatabaseConfig.forUserHome();
+        try {
+            config.initializeSchema();
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to initialize database schema", e);
+        }
+        ExecutorService executor = Executors.newCachedThreadPool(r -> {
             Thread t = new Thread(r, "wavelio-worker");
             t.setDaemon(true);
             return t;
-        }));
+        });
+        LibraryRepository libraryRepository = new SqliteLibraryRepository(config);
+        AnalysisHistoryRepository historyRepository = new SqliteAnalysisHistoryRepository(config);
+        return new WavelioFacadeImpl(eventBus, executor, libraryRepository, historyRepository);
     }
 
     @Override
@@ -43,6 +66,7 @@ public final class WavelioFacadeImpl implements WavelioFacade {
                 if (path == null || !java.nio.file.Files.exists(path)) {
                     throw new IllegalArgumentException("File does not exist: " + path);
                 }
+                libraryRepository.upsertByPath(path, path.getFileName().toString());
                 return new FileLoadedEvent(path, null);
             }
         };
@@ -84,8 +108,8 @@ public final class WavelioFacadeImpl implements WavelioFacade {
     }
 
     @Override
-    public List<?> getLibraryEntries() {
-        return Collections.emptyList();
+    public List<LibraryEntry> getLibraryEntries() {
+        return libraryRepository.findAll();
     }
 
     @Override
