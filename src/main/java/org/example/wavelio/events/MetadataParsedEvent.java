@@ -1,3 +1,5 @@
 package org.example.wavelio.events;
 
-public record MetadataParsedEvent(Object metadata) {}
+import org.example.wavelio.model.WavMetadata;
+
+public record MetadataParsedEvent(WavMetadata metadata) {}

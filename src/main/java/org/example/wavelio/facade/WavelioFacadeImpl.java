@@ -5,8 +5,10 @@ import org.example.wavelio.bus.EventBus;
 import org.example.wavelio.db.DatabaseConfig;
 import org.example.wavelio.events.ErrorEvent;
 import org.example.wavelio.events.FileLoadedEvent;
+import org.example.wavelio.events.MetadataParsedEvent;
 import org.example.wavelio.model.LibraryEntry;
 import org.example.wavelio.model.WavMetadata;
+import org.example.wavelio.service.WavParseService;
 import org.example.wavelio.repository.AnalysisHistoryRepository;
 import org.example.wavelio.repository.LibraryRepository;
 import org.example.wavelio.repository.SqliteAnalysisHistoryRepository;
@@ -25,6 +27,7 @@ public final class WavelioFacadeImpl implements WavelioFacade {
     private final ExecutorService executor;
     private final LibraryRepository libraryRepository;
     private final AnalysisHistoryRepository analysisHistoryRepository;
+    private final WavParseService wavParseService;
 
     private volatile WavMetadata currentMetadata;
     private volatile double[] waveformData;
@@ -33,12 +36,14 @@ public final class WavelioFacadeImpl implements WavelioFacade {
         EventBus eventBus,
         ExecutorService executor,
         LibraryRepository libraryRepository,
-        AnalysisHistoryRepository analysisHistoryRepository
+        AnalysisHistoryRepository analysisHistoryRepository,
+        WavParseService wavParseService
     ) {
         this.eventBus = eventBus;
         this.executor = executor;
         this.libraryRepository = libraryRepository;
         this.analysisHistoryRepository = analysisHistoryRepository;
+        this.wavParseService = wavParseService;
     }
 
     public static WavelioFacadeImpl create(EventBus eventBus) {
@@ -55,7 +60,8 @@ public final class WavelioFacadeImpl implements WavelioFacade {
         });
         LibraryRepository libraryRepository = new SqliteLibraryRepository(config);
         AnalysisHistoryRepository historyRepository = new SqliteAnalysisHistoryRepository(config);
-        return new WavelioFacadeImpl(eventBus, executor, libraryRepository, historyRepository);
+        WavParseService wavParseService = new WavParseService();
+        return new WavelioFacadeImpl(eventBus, executor, libraryRepository, historyRepository, wavParseService);
     }
 
     @Override
@@ -64,15 +70,21 @@ public final class WavelioFacadeImpl implements WavelioFacade {
             @Override
             protected FileLoadedEvent call() throws Exception {
                 if (path == null || !java.nio.file.Files.exists(path)) {
-                    throw new IllegalArgumentException("File does not exist: " + path);
+                    throw new IllegalArgumentException("Plik nie istnieje: " + path);
                 }
                 libraryRepository.upsertByPath(path, path.getFileName().toString());
-                return new FileLoadedEvent(path, null);
+                WavMetadata metadata = wavParseService.parse(path);
+                return new FileLoadedEvent(path, metadata);
             }
         };
-        task.setOnSucceeded(e -> eventBus.publish(task.getValue()));
-        task.setOnFailed(e -> eventBus.publish(new ErrorEvent(
-            task.getException() != null ? task.getException().getMessage() : "Load failed",
+        task.setOnSucceeded(e -> {
+            FileLoadedEvent value = task.getValue();
+            currentMetadata = value.metadata();
+            eventBus.publish(value);
+            eventBus.publish(new MetadataParsedEvent(value.metadata()));
+        });
+        task.setOnFailed(ev -> eventBus.publish(new ErrorEvent(
+            task.getException() != null ? task.getException().getMessage() : "Nie udało się wczytać pliku",
             task.getException()
         )));
         executor.execute(task);

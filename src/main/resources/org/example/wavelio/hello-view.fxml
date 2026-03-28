@@ -1,16 +1,28 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
 <?import javafx.geometry.Insets?>
-<?import javafx.scene.control.Label?>
-<?import javafx.scene.layout.VBox?>
-
 <?import javafx.scene.control.Button?>
-<VBox alignment="CENTER" spacing="20.0" xmlns:fx="http://javafx.com/fxml"
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.layout.GridPane?>
+<?import javafx.scene.layout.VBox?>
+<VBox alignment="TOP_CENTER" spacing="16.0" xmlns:fx="http://javafx.com/fxml"
       fx:controller="org.example.wavelio.controllers.HelloController">
   <padding>
-    <Insets bottom="20.0" left="20.0" right="20.0" top="20.0"/>
+    <Insets bottom="20.0" left="24.0" right="24.0" top="20.0"/>
   </padding>
 
-  <Label fx:id="welcomeText"/>
-  <Button text="Hello!" onAction="#onHelloButtonClick"/>
+  <Button fx:id="openButton" text="Otwórz plik WAV…" onAction="#onOpenWav"/>
+
+  <Label fx:id="statusLabel" text="Wybierz plik WAV, aby zobaczyć atrybuty."/>
+
+  <GridPane hgap="12.0" vgap="8.0">
+    <Label text="Sample rate (Hz):" GridPane.columnIndex="0" GridPane.rowIndex="0"/>
+    <Label fx:id="sampleRateLabel" text="—" GridPane.columnIndex="1" GridPane.rowIndex="0"/>
+    <Label text="Kanały:" GridPane.columnIndex="0" GridPane.rowIndex="1"/>
+    <Label fx:id="channelsLabel" text="—" GridPane.columnIndex="1" GridPane.rowIndex="1"/>
+    <Label text="Bity na próbkę:" GridPane.columnIndex="0" GridPane.rowIndex="2"/>
+    <Label fx:id="bitsPerSampleLabel" text="—" GridPane.columnIndex="1" GridPane.rowIndex="2"/>
+    <Label text="Czas trwania (s):" GridPane.columnIndex="0" GridPane.rowIndex="3"/>
+    <Label fx:id="durationLabel" text="—" GridPane.columnIndex="1" GridPane.rowIndex="3"/>
+  </GridPane>
 </VBox>
