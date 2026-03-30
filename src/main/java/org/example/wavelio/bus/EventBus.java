@@ -6,22 +6,22 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 public final class EventBus {
 
-    private final Map<Class<?>, List<Consumer<?>>> subscribers = new ConcurrentHashMap<>();
+    private final Map<Class<?>, CopyOnWriteArrayList<Consumer<?>>> subscribers = new ConcurrentHashMap<>();
 
 
-    @SuppressWarnings("unchecked")
     public <E> void subscribe(Class<E> eventType, Consumer<E> handler) {
-        subscribers.computeIfAbsent(eventType, k -> new ArrayList<>()).add(handler);
+        subscribers.computeIfAbsent(eventType, k -> new CopyOnWriteArrayList<>()).add(handler);
     }
 
 
     @SuppressWarnings("unchecked")
     public <E> void publish(E event) {
         if (event == null) return;
-        List<Consumer<?>> list = subscribers.get(event.getClass());
+        CopyOnWriteArrayList<Consumer<?>> list = subscribers.get(event.getClass());
         if (list == null || list.isEmpty()) return;
         List<Consumer<?>> copy = new ArrayList<>(list);
         Platform.runLater(() -> {

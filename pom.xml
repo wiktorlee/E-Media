@@ -11,8 +11,8 @@
 
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <maven.compiler.source>26</maven.compiler.source>
-    <maven.compiler.target>26</maven.compiler.target>
+    <maven.compiler.source>23</maven.compiler.source>
+    <maven.compiler.target>23</maven.compiler.target>
     <javafx.version>21</javafx.version>
     <junit.version>5.10.2</junit.version>
   </properties>
@@ -83,7 +83,7 @@
         <artifactId>maven-compiler-plugin</artifactId>
         <version>3.13.0</version>
         <configuration>
-          <release>26</release>
+          <release>23</release>
         </configuration>
       </plugin>
       <plugin>

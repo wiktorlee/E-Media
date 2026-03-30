@@ -4,10 +4,14 @@ import javafx.concurrent.Task;
 import org.example.wavelio.bus.EventBus;
 import org.example.wavelio.db.DatabaseConfig;
 import org.example.wavelio.events.ErrorEvent;
+import org.example.wavelio.events.FFTProgressEvent;
+import org.example.wavelio.events.FFTResultEvent;
 import org.example.wavelio.events.FileLoadedEvent;
 import org.example.wavelio.events.MetadataParsedEvent;
+import org.example.wavelio.model.FftAnalysisResult;
 import org.example.wavelio.model.LibraryEntry;
 import org.example.wavelio.model.WavMetadata;
+import org.example.wavelio.service.FFTService;
 import org.example.wavelio.service.WavParseService;
 import org.example.wavelio.repository.AnalysisHistoryRepository;
 import org.example.wavelio.repository.LibraryRepository;
@@ -28,22 +32,26 @@ public final class WavelioFacadeImpl implements WavelioFacade {
     private final LibraryRepository libraryRepository;
     private final AnalysisHistoryRepository analysisHistoryRepository;
     private final WavParseService wavParseService;
+    private final FFTService fftService;
 
     private volatile WavMetadata currentMetadata;
     private volatile double[] waveformData;
+    private volatile Path currentPath;
 
-    public WavelioFacadeImpl(
+    WavelioFacadeImpl(
         EventBus eventBus,
         ExecutorService executor,
         LibraryRepository libraryRepository,
         AnalysisHistoryRepository analysisHistoryRepository,
-        WavParseService wavParseService
+        WavParseService wavParseService,
+        FFTService fftService
     ) {
         this.eventBus = eventBus;
         this.executor = executor;
         this.libraryRepository = libraryRepository;
         this.analysisHistoryRepository = analysisHistoryRepository;
         this.wavParseService = wavParseService;
+        this.fftService = fftService;
     }
 
     public static WavelioFacadeImpl create(EventBus eventBus) {
@@ -61,7 +69,8 @@ public final class WavelioFacadeImpl implements WavelioFacade {
         LibraryRepository libraryRepository = new SqliteLibraryRepository(config);
         AnalysisHistoryRepository historyRepository = new SqliteAnalysisHistoryRepository(config);
         WavParseService wavParseService = new WavParseService();
-        return new WavelioFacadeImpl(eventBus, executor, libraryRepository, historyRepository, wavParseService);
+        FFTService fftService = new FFTService();
+        return new WavelioFacadeImpl(eventBus, executor, libraryRepository, historyRepository, wavParseService, fftService);
     }
 
     @Override
@@ -79,6 +88,7 @@ public final class WavelioFacadeImpl implements WavelioFacade {
         };
         task.setOnSucceeded(e -> {
             FileLoadedEvent value = task.getValue();
+            currentPath = value.path();
             currentMetadata = value.metadata();
             eventBus.publish(value);
             eventBus.publish(new MetadataParsedEvent(value.metadata()));
@@ -97,6 +107,60 @@ public final class WavelioFacadeImpl implements WavelioFacade {
 
     @Override
     public void runFFT() {
+        Path path = currentPath;
+        WavMetadata metadata = currentMetadata;
+        if (path == null || metadata == null) {
+            eventBus.publish(new ErrorEvent("Najpierw wczytaj plik WAV.", null));
+            return;
+        }
+
+        Task<FftAnalysisResult> task = new Task<>() {
+            @Override
+            protected FftAnalysisResult call() throws Exception {
+                updateProgress(0, 100);
+                short[][] pcmChannels = wavParseService.readPcm16Channels(path);
+                updateProgress(20, 100);
+                FftAnalysisResult result = fftService.analyzePerChannelPcm16(
+                    pcmChannels,
+                    metadata.sampleRate(),
+                    p -> updateProgress(20 + (int) Math.round(p * 75.0), 100)
+                );
+                waveformData = new double[pcmChannels[0].length];
+                for (int i = 0; i < pcmChannels[0].length; i++) {
+                    waveformData[i] = pcmChannels[0][i] / 32768.0;
+                }
+                updateProgress(100, 100);
+                return result;
+            }
+        };
+        task.progressProperty().addListener((obs, oldV, newV) -> {
+            int percent = (int) Math.round(newV.doubleValue() * 100.0);
+            if (percent < 0) {
+                percent = 0;
+            }
+            if (percent > 100) {
+                percent = 100;
+            }
+            eventBus.publish(new FFTProgressEvent(percent));
+        });
+
+        task.setOnSucceeded(e -> {
+            FftAnalysisResult result = task.getValue();
+            eventBus.publish(new FFTProgressEvent(100));
+            eventBus.publish(new FFTResultEvent(result));
+            try {
+                libraryRepository.findByPath(path).ifPresent(entry ->
+                    analysisHistoryRepository.add(entry.id(), "FFT " + result.windowSize() + " Hann dB per-channel")
+                );
+            } catch (Exception ex) {
+                eventBus.publish(new ErrorEvent("FFT policzone, ale nie zapisano historii analizy.", ex));
+            }
+        });
+        task.setOnFailed(e -> eventBus.publish(new ErrorEvent(
+            task.getException() != null ? task.getException().getMessage() : "Nie udało się wykonać FFT",
+            task.getException()
+        )));
+        executor.execute(task);
     }
 
     @Override

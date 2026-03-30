@@ -1,3 +1,5 @@
 package org.example.wavelio.events;
 
-public record FFTResultEvent(Object spectrumData) {}
+import org.example.wavelio.model.FftAnalysisResult;
+
+public record FFTResultEvent(FftAnalysisResult spectrumData) {}
