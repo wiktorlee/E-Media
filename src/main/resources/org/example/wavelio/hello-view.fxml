@@ -3,41 +3,57 @@
 <?import javafx.geometry.Insets?>
 <?import javafx.scene.control.Button?>
 <?import javafx.scene.control.Label?>
+<?import javafx.scene.control.ListView?>
 <?import javafx.scene.control.ProgressBar?>
+<?import javafx.scene.layout.HBox?>
 <?import javafx.scene.layout.GridPane?>
 <?import javafx.scene.layout.VBox?>
-<VBox alignment="TOP_CENTER" spacing="16.0" xmlns:fx="http://javafx.com/fxml"
+<?import org.example.wavelio.ui.WaveformCanvas?>
+<HBox spacing="16.0" xmlns:fx="http://javafx.com/fxml"
       fx:controller="org.example.wavelio.controllers.HelloController">
   <padding>
     <Insets bottom="20.0" left="24.0" right="24.0" top="20.0"/>
   </padding>
 
-  <Button fx:id="openButton" text="Otwórz plik WAV…" onAction="#onOpenWav"/>
-  <Button fx:id="runFftButton" text="Uruchom FFT" onAction="#onRunFft"/>
+  <VBox spacing="12.0" prefWidth="720.0">
+    <HBox spacing="8.0">
+      <Button fx:id="openButton" text="Otwórz plik WAV…" onAction="#onOpenWav"/>
+      <Button fx:id="runFftButton" text="Uruchom FFT" onAction="#onRunFft"/>
+      <Label fx:id="statusLabel" text="Wybierz plik WAV, aby zobaczyć atrybuty."/>
+    </HBox>
 
-  <Label fx:id="statusLabel" text="Wybierz plik WAV, aby zobaczyć atrybuty."/>
+    <WaveformCanvas fx:id="waveformCanvas" width="720.0" height="180.0"/>
 
-  <GridPane hgap="12.0" vgap="8.0">
-    <Label text="Postęp FFT:" GridPane.columnIndex="0" GridPane.rowIndex="0"/>
-    <ProgressBar fx:id="fftProgressBar" progress="0.0" prefWidth="220.0" GridPane.columnIndex="1" GridPane.rowIndex="0"/>
-    <Label fx:id="fftProgressLabel" text="0%" GridPane.columnIndex="2" GridPane.rowIndex="0"/>
-  </GridPane>
+    <GridPane hgap="12.0" vgap="8.0">
+      <Label text="Postęp FFT:" GridPane.columnIndex="0" GridPane.rowIndex="0"/>
+      <ProgressBar fx:id="fftProgressBar" progress="0.0" prefWidth="220.0" GridPane.columnIndex="1" GridPane.rowIndex="0"/>
+      <Label fx:id="fftProgressLabel" text="0%" GridPane.columnIndex="2" GridPane.rowIndex="0"/>
+    </GridPane>
 
-  <GridPane hgap="12.0" vgap="8.0">
-    <Label text="Sample rate (Hz):" GridPane.columnIndex="0" GridPane.rowIndex="0"/>
-    <Label fx:id="sampleRateLabel" text="—" GridPane.columnIndex="1" GridPane.rowIndex="0"/>
-    <Label text="Kanały:" GridPane.columnIndex="0" GridPane.rowIndex="1"/>
-    <Label fx:id="channelsLabel" text="—" GridPane.columnIndex="1" GridPane.rowIndex="1"/>
-    <Label text="Bity na próbkę:" GridPane.columnIndex="0" GridPane.rowIndex="2"/>
-    <Label fx:id="bitsPerSampleLabel" text="—" GridPane.columnIndex="1" GridPane.rowIndex="2"/>
-    <Label text="Czas trwania (s):" GridPane.columnIndex="0" GridPane.rowIndex="3"/>
-    <Label fx:id="durationLabel" text="—" GridPane.columnIndex="1" GridPane.rowIndex="3"/>
-  </GridPane>
+    <GridPane hgap="12.0" vgap="8.0">
+      <Label text="FFT peak (Hz):" GridPane.columnIndex="0" GridPane.rowIndex="0"/>
+      <Label fx:id="peakHzLabel" text="—" GridPane.columnIndex="1" GridPane.rowIndex="0"/>
+      <Label text="FFT peak (dB):" GridPane.columnIndex="0" GridPane.rowIndex="1"/>
+      <Label fx:id="peakDbLabel" text="—" GridPane.columnIndex="1" GridPane.rowIndex="1"/>
+    </GridPane>
+  </VBox>
 
-  <GridPane hgap="12.0" vgap="8.0">
-    <Label text="FFT peak (Hz):" GridPane.columnIndex="0" GridPane.rowIndex="0"/>
-    <Label fx:id="peakHzLabel" text="—" GridPane.columnIndex="1" GridPane.rowIndex="0"/>
-    <Label text="FFT peak (dB):" GridPane.columnIndex="0" GridPane.rowIndex="1"/>
-    <Label fx:id="peakDbLabel" text="—" GridPane.columnIndex="1" GridPane.rowIndex="1"/>
-  </GridPane>
-</VBox>
+  <VBox spacing="10.0" prefWidth="280.0">
+    <Label text="Informacje o pliku"/>
+    <GridPane hgap="10.0" vgap="6.0">
+      <Label text="Nazwa:" GridPane.columnIndex="0" GridPane.rowIndex="0"/>
+      <Label fx:id="fileNameLabel" text="—" GridPane.columnIndex="1" GridPane.rowIndex="0"/>
+      <Label text="Sample rate (Hz):" GridPane.columnIndex="0" GridPane.rowIndex="1"/>
+      <Label fx:id="sampleRateLabel" text="—" GridPane.columnIndex="1" GridPane.rowIndex="1"/>
+      <Label text="Kanały:" GridPane.columnIndex="0" GridPane.rowIndex="2"/>
+      <Label fx:id="channelsLabel" text="—" GridPane.columnIndex="1" GridPane.rowIndex="2"/>
+      <Label text="Bity na próbkę:" GridPane.columnIndex="0" GridPane.rowIndex="3"/>
+      <Label fx:id="bitsPerSampleLabel" text="—" GridPane.columnIndex="1" GridPane.rowIndex="3"/>
+      <Label text="Czas trwania (s):" GridPane.columnIndex="0" GridPane.rowIndex="4"/>
+      <Label fx:id="durationLabel" text="—" GridPane.columnIndex="1" GridPane.rowIndex="4"/>
+    </GridPane>
+
+    <Label text="Status / log"/>
+    <ListView fx:id="statusListView" prefHeight="420.0"/>
+  </VBox>
+</HBox>

@@ -22,7 +22,7 @@ public class HelloApplication extends Application {
         facade = WavelioFacadeImpl.create(eventBus);
 
         FXMLLoader fxmlLoader = new FXMLLoader(HelloApplication.class.getResource("hello-view.fxml"));
-        Scene scene = new Scene(fxmlLoader.load(), 480, 320);
+        Scene scene = new Scene(fxmlLoader.load(), 1120, 700);
         HelloController controller = fxmlLoader.getController();
         controller.setFacade(facade);
         controller.setEventBus(eventBus);

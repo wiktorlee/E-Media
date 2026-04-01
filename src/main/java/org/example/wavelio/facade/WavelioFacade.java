@@ -27,5 +27,5 @@ public interface WavelioFacade {
 
     List<LibraryEntry> getLibraryEntries();
 
-    Optional<double[]> getWaveformData();
+    Optional<double[][]> getWaveformData();
 }

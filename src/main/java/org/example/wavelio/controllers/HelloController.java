@@ -1,6 +1,7 @@
 package org.example.wavelio.controllers;
 
 import javafx.fxml.FXML;
+import javafx.scene.control.ListView;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ProgressBar;
@@ -12,11 +13,15 @@ import org.example.wavelio.events.FFTProgressEvent;
 import org.example.wavelio.events.FFTResultEvent;
 import org.example.wavelio.events.FileLoadedEvent;
 import org.example.wavelio.events.MetadataParsedEvent;
+import org.example.wavelio.events.WaveformReadyEvent;
 import org.example.wavelio.facade.WavelioFacade;
 import org.example.wavelio.model.FftAnalysisResult;
 import org.example.wavelio.model.WavMetadata;
+import org.example.wavelio.ui.WaveformCanvas;
 
 import java.io.File;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 
 public class HelloController {
 
@@ -28,6 +33,9 @@ public class HelloController {
 
     @FXML
     private Label statusLabel;
+
+    @FXML
+    private Label fileNameLabel;
 
     @FXML
     private Label sampleRateLabel;
@@ -53,6 +61,14 @@ public class HelloController {
     @FXML
     private Label fftProgressLabel;
 
+    @FXML
+    private ListView<String> statusListView;
+
+    @FXML
+    private WaveformCanvas waveformCanvas;
+
+    private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm:ss");
+
     private WavelioFacade facade;
 
     public void setFacade(WavelioFacade facade) {
@@ -60,19 +76,35 @@ public class HelloController {
     }
 
     public void setEventBus(EventBus eventBus) {
-        eventBus.subscribe(FileLoadedEvent.class, e ->
-            statusLabel.setText("Wczytano: " + e.path().getFileName()));
-        eventBus.subscribe(MetadataParsedEvent.class, e -> applyMetadata(e.metadata()));
+        eventBus.subscribe(FileLoadedEvent.class, e -> {
+            statusLabel.setText("Wczytano: " + e.path().getFileName());
+            fileNameLabel.setText(e.path().getFileName().toString());
+            appendStatus("Wczytano plik: " + e.path().getFileName());
+            runFftButton.setDisable(false);
+        });
+        eventBus.subscribe(MetadataParsedEvent.class, e -> {
+            applyMetadata(e.metadata());
+            appendStatus("Metadane WAV gotowe");
+        });
+        eventBus.subscribe(WaveformReadyEvent.class, e -> {
+            applyWaveform(e.channels());
+            if (e.channels() != null && e.channels().length > 0 && e.channels()[0].length > 0) {
+                appendStatus("Waveform gotowy");
+            }
+        });
         eventBus.subscribe(FFTProgressEvent.class, e -> applyFftProgress(e.percent()));
-        eventBus.subscribe(FFTResultEvent.class, e -> applyFftResult(e.spectrumData()));
+        eventBus.subscribe(FFTResultEvent.class, e -> {
+            applyFftResult(e.spectrumData());
+            appendStatus("FFT zakończone");
+        });
         eventBus.subscribe(ErrorEvent.class, e -> {
             statusLabel.setText("Błąd: " + e.message());
-            clearMetadataLabels();
-            clearFftLabels();
+            appendStatus("Błąd: " + e.message());
             runFftButton.setDisable(false);
-            fftProgressBar.setProgress(0.0);
-            fftProgressLabel.setText("0%");
         });
+
+        runFftButton.setDisable(true);
+        waveformCanvas.setChannels(new double[0][0]);
     }
 
     private void applyMetadata(WavMetadata m) {
@@ -80,13 +112,6 @@ public class HelloController {
         channelsLabel.setText(Integer.toString(m.numChannels()));
         bitsPerSampleLabel.setText(Integer.toString(m.bitsPerSample()));
         durationLabel.setText(String.format("%.4f", m.durationSeconds()));
-    }
-
-    private void clearMetadataLabels() {
-        sampleRateLabel.setText("—");
-        channelsLabel.setText("—");
-        bitsPerSampleLabel.setText("—");
-        durationLabel.setText("—");
     }
 
     private void applyFftResult(FftAnalysisResult result) {
@@ -119,6 +144,13 @@ public class HelloController {
         fftProgressLabel.setText(clamped + "%");
     }
 
+    private void applyWaveform(double[][] channels) {
+        waveformCanvas.setChannels(channels);
+        if (channels != null && channels.length > 0 && channels[0].length > 0) {
+            statusLabel.setText("Waveform gotowy");
+        }
+    }
+
     @FXML
     protected void onOpenWav() {
         FileChooser chooser = new FileChooser();
@@ -128,9 +160,11 @@ public class HelloController {
         Window window = openButton.getScene().getWindow();
         File file = chooser.showOpenDialog(window);
         if (file != null) {
+            runFftButton.setDisable(true);
+            statusLabel.setText("Wczytywanie pliku...");
+            appendStatus("Rozpoczęto wczytywanie pliku");
             facade.loadFile(file.toPath());
         }
-        runFftButton.setDisable(false);
         fftProgressBar.setProgress(0.0);
         fftProgressLabel.setText("0%");
     }
@@ -139,8 +173,17 @@ public class HelloController {
     protected void onRunFft() {
         statusLabel.setText("FFT w toku...");
         runFftButton.setDisable(true);
+        appendStatus("Uruchomiono FFT");
         fftProgressBar.setProgress(0.0);
         fftProgressLabel.setText("0%");
         facade.runFFT();
+    }
+
+    private void appendStatus(String message) {
+        String line = "[" + LocalTime.now().format(TIME_FORMAT) + "] " + message;
+        statusListView.getItems().add(0, line);
+        if (statusListView.getItems().size() > 30) {
+            statusListView.getItems().remove(statusListView.getItems().size() - 1);
+        }
     }
 }

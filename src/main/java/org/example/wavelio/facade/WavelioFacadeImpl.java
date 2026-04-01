@@ -8,11 +8,13 @@ import org.example.wavelio.events.FFTProgressEvent;
 import org.example.wavelio.events.FFTResultEvent;
 import org.example.wavelio.events.FileLoadedEvent;
 import org.example.wavelio.events.MetadataParsedEvent;
+import org.example.wavelio.events.WaveformReadyEvent;
 import org.example.wavelio.model.FftAnalysisResult;
 import org.example.wavelio.model.LibraryEntry;
 import org.example.wavelio.model.WavMetadata;
 import org.example.wavelio.service.FFTService;
 import org.example.wavelio.service.WavParseService;
+import org.example.wavelio.service.WaveformService;
 import org.example.wavelio.repository.AnalysisHistoryRepository;
 import org.example.wavelio.repository.LibraryRepository;
 import org.example.wavelio.repository.SqliteAnalysisHistoryRepository;
@@ -20,6 +22,7 @@ import org.example.wavelio.repository.SqliteLibraryRepository;
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -27,16 +30,24 @@ import java.util.concurrent.Executors;
 
 public final class WavelioFacadeImpl implements WavelioFacade {
 
+    private static final int WAVEFORM_POINTS = 2400;
+
+    private record WaveformLoadResult(short[][] pcm, double[][] precomputed) {}
+
     private final EventBus eventBus;
     private final ExecutorService executor;
     private final LibraryRepository libraryRepository;
     private final AnalysisHistoryRepository analysisHistoryRepository;
     private final WavParseService wavParseService;
     private final FFTService fftService;
+    private final WaveformService waveformService;
 
     private volatile WavMetadata currentMetadata;
-    private volatile double[] waveformData;
     private volatile Path currentPath;
+    /** Precomputed waveform for {@link #getWaveformData()} — same shape as {@link org.example.wavelio.events.WaveformReadyEvent}. */
+    private volatile double[][] currentPrecomputedWaveform;
+    private volatile short[][] cachedPcmChannels;
+    private volatile Path cachedPcmPath;
 
     WavelioFacadeImpl(
         EventBus eventBus,
@@ -44,7 +55,8 @@ public final class WavelioFacadeImpl implements WavelioFacade {
         LibraryRepository libraryRepository,
         AnalysisHistoryRepository analysisHistoryRepository,
         WavParseService wavParseService,
-        FFTService fftService
+        FFTService fftService,
+        WaveformService waveformService
     ) {
         this.eventBus = eventBus;
         this.executor = executor;
@@ -52,6 +64,7 @@ public final class WavelioFacadeImpl implements WavelioFacade {
         this.analysisHistoryRepository = analysisHistoryRepository;
         this.wavParseService = wavParseService;
         this.fftService = fftService;
+        this.waveformService = waveformService;
     }
 
     public static WavelioFacadeImpl create(EventBus eventBus) {
@@ -70,7 +83,16 @@ public final class WavelioFacadeImpl implements WavelioFacade {
         AnalysisHistoryRepository historyRepository = new SqliteAnalysisHistoryRepository(config);
         WavParseService wavParseService = new WavParseService();
         FFTService fftService = new FFTService();
-        return new WavelioFacadeImpl(eventBus, executor, libraryRepository, historyRepository, wavParseService, fftService);
+        WaveformService waveformService = new WaveformService();
+        return new WavelioFacadeImpl(
+            eventBus,
+            executor,
+            libraryRepository,
+            historyRepository,
+            wavParseService,
+            fftService,
+            waveformService
+        );
     }
 
     @Override
@@ -90,8 +112,12 @@ public final class WavelioFacadeImpl implements WavelioFacade {
             FileLoadedEvent value = task.getValue();
             currentPath = value.path();
             currentMetadata = value.metadata();
+            cachedPcmChannels = null;
+            cachedPcmPath = null;
+            currentPrecomputedWaveform = null;
             eventBus.publish(value);
             eventBus.publish(new MetadataParsedEvent(value.metadata()));
+            startWaveformTask(value.path());
         });
         task.setOnFailed(ev -> eventBus.publish(new ErrorEvent(
             task.getException() != null ? task.getException().getMessage() : "Nie udało się wczytać pliku",
@@ -118,17 +144,18 @@ public final class WavelioFacadeImpl implements WavelioFacade {
             @Override
             protected FftAnalysisResult call() throws Exception {
                 updateProgress(0, 100);
-                short[][] pcmChannels = wavParseService.readPcm16Channels(path);
+                short[][] pcmChannels;
+                if (Objects.equals(path, cachedPcmPath) && cachedPcmChannels != null) {
+                    pcmChannels = cachedPcmChannels;
+                } else {
+                    pcmChannels = wavParseService.readPcm16Channels(path);
+                }
                 updateProgress(20, 100);
                 FftAnalysisResult result = fftService.analyzePerChannelPcm16(
                     pcmChannels,
                     metadata.sampleRate(),
                     p -> updateProgress(20 + (int) Math.round(p * 75.0), 100)
                 );
-                waveformData = new double[pcmChannels[0].length];
-                for (int i = 0; i < pcmChannels[0].length; i++) {
-                    waveformData[i] = pcmChannels[0][i] / 32768.0;
-                }
                 updateProgress(100, 100);
                 return result;
             }
@@ -189,7 +216,42 @@ public final class WavelioFacadeImpl implements WavelioFacade {
     }
 
     @Override
-    public Optional<double[]> getWaveformData() {
-        return Optional.ofNullable(waveformData);
+    public Optional<double[][]> getWaveformData() {
+        return Optional.ofNullable(currentPrecomputedWaveform);
+    }
+
+    private void startWaveformTask(Path path) {
+        Task<WaveformLoadResult> waveformTask = new Task<>() {
+            @Override
+            protected WaveformLoadResult call() throws Exception {
+                short[][] channels = wavParseService.readPcm16Channels(path);
+                double[][] precomputed = waveformService.buildLinearPrecomputed(channels, WAVEFORM_POINTS);
+                return new WaveformLoadResult(channels, precomputed);
+            }
+        };
+        waveformTask.setOnSucceeded(e -> {
+            if (!Objects.equals(path, currentPath)) {
+                return;
+            }
+            WaveformLoadResult value = waveformTask.getValue();
+            cachedPcmChannels = value.pcm();
+            cachedPcmPath = path;
+            currentPrecomputedWaveform = value.precomputed();
+            eventBus.publish(new WaveformReadyEvent(value.precomputed()));
+        });
+        waveformTask.setOnFailed(e -> {
+            if (!Objects.equals(path, currentPath)) {
+                return;
+            }
+            cachedPcmChannels = null;
+            cachedPcmPath = null;
+            currentPrecomputedWaveform = null;
+            eventBus.publish(new WaveformReadyEvent(new double[0][0]));
+            eventBus.publish(new ErrorEvent(
+                waveformTask.getException() != null ? waveformTask.getException().getMessage() : "Nie udało się przygotować waveform",
+                waveformTask.getException()
+            ));
+        });
+        executor.execute(waveformTask);
     }
 }
