@@ -5,6 +5,8 @@
 <?import javafx.scene.control.Label?>
 <?import javafx.scene.control.ListView?>
 <?import javafx.scene.control.ProgressBar?>
+<?import javafx.scene.control.Separator?>
+<?import javafx.scene.control.TextField?>
 <?import javafx.scene.layout.HBox?>
 <?import javafx.scene.layout.GridPane?>
 <?import javafx.scene.layout.VBox?>
@@ -19,6 +21,10 @@
     <HBox spacing="8.0">
       <Button fx:id="openButton" text="Otwórz plik WAV…" onAction="#onOpenWav"/>
       <Button fx:id="runFftButton" text="Uruchom FFT" onAction="#onRunFft"/>
+      <Button fx:id="cropButton" text="Crop" onAction="#onCrop" disable="true"/>
+      <Button fx:id="anonymizeButton" text="Anonimizuj" onAction="#onAnonymize" disable="true"/>
+      <Button fx:id="saveButton" text="Zapisz" onAction="#onSave" disable="true"/>
+      <Button fx:id="saveAsButton" text="Zapisz jako…" onAction="#onSaveAs" disable="true"/>
       <Label fx:id="statusLabel" text="Wybierz plik WAV, aby zobaczyć atrybuty."/>
     </HBox>
 
@@ -51,6 +57,17 @@
       <Label fx:id="bitsPerSampleLabel" text="—" GridPane.columnIndex="1" GridPane.rowIndex="3"/>
       <Label text="Czas trwania (s):" GridPane.columnIndex="0" GridPane.rowIndex="4"/>
       <Label fx:id="durationLabel" text="—" GridPane.columnIndex="1" GridPane.rowIndex="4"/>
+    </GridPane>
+
+    <Separator/>
+    <Label text="Metadane INFO (RIFF)"/>
+    <GridPane hgap="10.0" vgap="6.0">
+      <Label text="Tytuł (INAM):" GridPane.columnIndex="0" GridPane.rowIndex="0"/>
+      <TextField fx:id="infoInamField" promptText="—" GridPane.columnIndex="1" GridPane.rowIndex="0"/>
+      <Label text="Artysta (IART):" GridPane.columnIndex="0" GridPane.rowIndex="1"/>
+      <TextField fx:id="infoIartField" promptText="—" GridPane.columnIndex="1" GridPane.rowIndex="1"/>
+      <Label text="Komentarz (ICMT):" GridPane.columnIndex="0" GridPane.rowIndex="2"/>
+      <TextField fx:id="infoIcmtField" promptText="—" GridPane.columnIndex="1" GridPane.rowIndex="2"/>
     </GridPane>
 
     <Label text="Status / log"/>

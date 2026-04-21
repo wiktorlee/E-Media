@@ -19,8 +19,9 @@ class WavParseServiceTest {
     private final WavParseService service = new WavParseService();
 
     @Test
-    void parsesResourceWav() throws Exception {
-        Path wav = Path.of(WavParseServiceTest.class.getResource("/minimal.wav").toURI());
+    void parsesGeneratedWav(@TempDir Path dir) throws Exception {
+        Path wav = dir.resolve("minimal.wav");
+        writePcmWav(wav, 8000, 1, 16, 2);
         WavMetadata m = service.parse(wav);
         assertEquals(8000, m.sampleRate());
         assertEquals(1, m.numChannels());

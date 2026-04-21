@@ -6,14 +6,19 @@ import org.example.wavelio.db.DatabaseConfig;
 import org.example.wavelio.events.ErrorEvent;
 import org.example.wavelio.events.FFTProgressEvent;
 import org.example.wavelio.events.FFTResultEvent;
+import org.example.wavelio.events.FileSavedEvent;
 import org.example.wavelio.events.FileLoadedEvent;
+import org.example.wavelio.events.InfoMetadataParsedEvent;
 import org.example.wavelio.events.MetadataParsedEvent;
 import org.example.wavelio.events.WaveformReadyEvent;
 import org.example.wavelio.model.FftAnalysisResult;
+import org.example.wavelio.model.InfoMetadata;
 import org.example.wavelio.model.LibraryEntry;
 import org.example.wavelio.model.WavMetadata;
 import org.example.wavelio.service.FFTService;
+import org.example.wavelio.service.InfoChunkService;
 import org.example.wavelio.service.WavParseService;
+import org.example.wavelio.service.WavEditService;
 import org.example.wavelio.service.WaveformService;
 import org.example.wavelio.repository.AnalysisHistoryRepository;
 import org.example.wavelio.repository.LibraryRepository;
@@ -41,6 +46,8 @@ public final class WavelioFacadeImpl implements WavelioFacade {
     private final WavParseService wavParseService;
     private final FFTService fftService;
     private final WaveformService waveformService;
+    private final InfoChunkService infoChunkService;
+    private final WavEditService wavEditService;
 
     private volatile WavMetadata currentMetadata;
     private volatile Path currentPath;
@@ -49,6 +56,12 @@ public final class WavelioFacadeImpl implements WavelioFacade {
     private volatile short[][] cachedPcmChannels;
     private volatile Path cachedPcmPath;
 
+    private volatile Optional<InfoMetadata> currentInfo = Optional.empty();
+
+    private volatile Optional<WavEditService.CropRangeMs> pendingCrop = Optional.empty();
+    private volatile boolean pendingAnonymize;
+    private volatile Optional<InfoMetadata> pendingInfoOverride = Optional.empty();
+
     WavelioFacadeImpl(
         EventBus eventBus,
         ExecutorService executor,
@@ -56,7 +69,9 @@ public final class WavelioFacadeImpl implements WavelioFacade {
         AnalysisHistoryRepository analysisHistoryRepository,
         WavParseService wavParseService,
         FFTService fftService,
-        WaveformService waveformService
+        WaveformService waveformService,
+        InfoChunkService infoChunkService,
+        WavEditService wavEditService
     ) {
         this.eventBus = eventBus;
         this.executor = executor;
@@ -65,6 +80,8 @@ public final class WavelioFacadeImpl implements WavelioFacade {
         this.wavParseService = wavParseService;
         this.fftService = fftService;
         this.waveformService = waveformService;
+        this.infoChunkService = infoChunkService;
+        this.wavEditService = wavEditService;
     }
 
     public static WavelioFacadeImpl create(EventBus eventBus) {
@@ -84,6 +101,8 @@ public final class WavelioFacadeImpl implements WavelioFacade {
         WavParseService wavParseService = new WavParseService();
         FFTService fftService = new FFTService();
         WaveformService waveformService = new WaveformService();
+        InfoChunkService infoChunkService = new InfoChunkService();
+        WavEditService wavEditService = new WavEditService();
         return new WavelioFacadeImpl(
             eventBus,
             executor,
@@ -91,7 +110,9 @@ public final class WavelioFacadeImpl implements WavelioFacade {
             historyRepository,
             wavParseService,
             fftService,
-            waveformService
+            waveformService,
+            infoChunkService,
+            wavEditService
         );
     }
 
@@ -115,8 +136,12 @@ public final class WavelioFacadeImpl implements WavelioFacade {
             cachedPcmChannels = null;
             cachedPcmPath = null;
             currentPrecomputedWaveform = null;
+            pendingCrop = Optional.empty();
+            pendingAnonymize = false;
+            pendingInfoOverride = Optional.empty();
             eventBus.publish(value);
             eventBus.publish(new MetadataParsedEvent(value.metadata()));
+            startInfoTask(value.path());
             startWaveformTask(value.path());
         });
         task.setOnFailed(ev -> eventBus.publish(new ErrorEvent(
@@ -200,14 +225,60 @@ public final class WavelioFacadeImpl implements WavelioFacade {
 
     @Override
     public void crop(long startMs, long endMs) {
+        WavMetadata m = currentMetadata;
+        if (m == null) {
+            eventBus.publish(new ErrorEvent("Najpierw wczytaj plik WAV.", null));
+            return;
+        }
+        long durationMs = (long) Math.floor(m.durationSeconds() * 1000.0);
+        long s = Math.max(0, Math.min(durationMs, startMs));
+        long e = Math.max(0, Math.min(durationMs, endMs));
+        if (e < s) {
+            long tmp = s;
+            s = e;
+            e = tmp;
+        }
+        pendingCrop = Optional.of(new WavEditService.CropRangeMs(s, e));
     }
 
     @Override
     public void anonymize() {
+        if (currentPath == null) {
+            eventBus.publish(new ErrorEvent("Najpierw wczytaj plik WAV.", null));
+            return;
+        }
+        pendingAnonymize = true;
     }
 
     @Override
     public void saveFile(Path path) {
+        Path src = currentPath;
+        if (src == null) {
+            eventBus.publish(new ErrorEvent("Najpierw wczytaj plik WAV.", null));
+            return;
+        }
+        Optional<WavEditService.CropRangeMs> crop = pendingCrop;
+        boolean anonymize = pendingAnonymize;
+        Optional<InfoMetadata> infoOverride = pendingInfoOverride;
+
+        Task<Path> task = new Task<>() {
+            @Override
+            protected Path call() throws Exception {
+                wavEditService.saveEdited(src, path, crop, anonymize, infoOverride);
+                return path;
+            }
+        };
+        task.setOnSucceeded(e -> {
+            Path saved = task.getValue();
+            eventBus.publish(new FileSavedEvent(saved));
+            // Reload from saved file so UI reflects edits.
+            loadFile(saved);
+        });
+        task.setOnFailed(e -> eventBus.publish(new ErrorEvent(
+            task.getException() != null ? task.getException().getMessage() : "Nie udało się zapisać pliku",
+            task.getException()
+        )));
+        executor.execute(task);
     }
 
     @Override
@@ -253,5 +324,36 @@ public final class WavelioFacadeImpl implements WavelioFacade {
             ));
         });
         executor.execute(waveformTask);
+    }
+
+    private void startInfoTask(Path path) {
+        Task<Optional<InfoMetadata>> task = new Task<>() {
+            @Override
+            protected Optional<InfoMetadata> call() throws Exception {
+                return infoChunkService.readInfo(path);
+            }
+        };
+        task.setOnSucceeded(e -> {
+            if (!Objects.equals(path, currentPath)) {
+                return;
+            }
+            currentInfo = Optional.ofNullable(task.getValue()).orElse(Optional.empty());
+            eventBus.publish(new InfoMetadataParsedEvent(currentInfo));
+        });
+        task.setOnFailed(e -> {
+            if (!Objects.equals(path, currentPath)) {
+                return;
+            }
+            currentInfo = Optional.empty();
+            eventBus.publish(new InfoMetadataParsedEvent(Optional.empty()));
+        });
+        executor.execute(task);
+    }
+
+    /**
+     * Used by UI to set pending INFO writes without changing the public facade interface.
+     */
+    public void setPendingInfoOverride(Optional<InfoMetadata> info) {
+        pendingInfoOverride = info == null ? Optional.empty() : info;
     }
 }
