@@ -1,7 +1,10 @@
 package org.example.wavelio.facade;
 
 import org.example.wavelio.model.LibraryEntry;
+import org.example.wavelio.model.InfoMetadata;
+import org.example.wavelio.model.SpectrogramResult;
 import org.example.wavelio.model.WavMetadata;
+import org.example.wavelio.service.WindowType;
 
 import java.nio.file.Path;
 import java.util.List;
@@ -15,6 +18,8 @@ public interface WavelioFacade {
 
     void runFFT();
 
+    void runSpectrogram(WindowType windowType);
+
     void play();
 
     void stop();
@@ -25,7 +30,11 @@ public interface WavelioFacade {
 
     void saveFile(Path path);
 
+    void setPendingInfoOverride(Optional<InfoMetadata> info);
+
     List<LibraryEntry> getLibraryEntries();
 
     Optional<double[][]> getWaveformData();
+
+    Optional<SpectrogramResult> getSpectrogramData();
 }

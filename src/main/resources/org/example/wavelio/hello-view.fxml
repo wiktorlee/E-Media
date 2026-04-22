@@ -2,14 +2,19 @@
 
 <?import javafx.geometry.Insets?>
 <?import javafx.scene.control.Button?>
+<?import javafx.scene.control.ComboBox?>
+<?import javafx.scene.control.CheckBox?>
 <?import javafx.scene.control.Label?>
 <?import javafx.scene.control.ListView?>
-<?import javafx.scene.control.ProgressBar?>
+<?import javafx.scene.control.ProgressIndicator?>
 <?import javafx.scene.control.Separator?>
 <?import javafx.scene.control.TextField?>
+<?import javafx.scene.layout.FlowPane?>
 <?import javafx.scene.layout.HBox?>
 <?import javafx.scene.layout.GridPane?>
+<?import javafx.scene.layout.Priority?>
 <?import javafx.scene.layout.VBox?>
+<?import org.example.wavelio.ui.SpectrogramCanvas?>
 <?import org.example.wavelio.ui.WaveformCanvas?>
 <HBox spacing="16.0" xmlns:fx="http://javafx.com/fxml"
       fx:controller="org.example.wavelio.controllers.HelloController">
@@ -17,24 +22,35 @@
     <Insets bottom="20.0" left="24.0" right="24.0" top="20.0"/>
   </padding>
 
-  <VBox spacing="12.0" prefWidth="720.0">
-    <HBox spacing="8.0">
+  <VBox spacing="12.0" prefWidth="860.0" HBox.hgrow="ALWAYS">
+    <FlowPane hgap="8.0" vgap="8.0" prefWrapLength="860.0">
       <Button fx:id="openButton" text="Otwórz plik WAV…" onAction="#onOpenWav"/>
       <Button fx:id="runFftButton" text="Uruchom FFT" onAction="#onRunFft"/>
+      <ComboBox fx:id="spectrogramWindowTypeCombo" prefWidth="120.0"/>
+      <Button fx:id="runSpectrogramButton" text="Generuj spektrogram" onAction="#onRunSpectrogram"/>
       <Button fx:id="cropButton" text="Crop" onAction="#onCrop" disable="true"/>
       <Button fx:id="anonymizeButton" text="Anonimizuj" onAction="#onAnonymize" disable="true"/>
       <Button fx:id="saveButton" text="Zapisz" onAction="#onSave" disable="true"/>
       <Button fx:id="saveAsButton" text="Zapisz jako…" onAction="#onSaveAs" disable="true"/>
-      <Label fx:id="statusLabel" text="Wybierz plik WAV, aby zobaczyć atrybuty."/>
-    </HBox>
+    </FlowPane>
+    <Label fx:id="statusLabel" text="Wybierz plik WAV, aby zobaczyć atrybuty." wrapText="true"/>
 
     <WaveformCanvas fx:id="waveformCanvas" width="720.0" height="180.0"/>
+    <SpectrogramCanvas fx:id="spectrogramCanvas" width="720.0" height="180.0"/>
+    <HBox spacing="16.0">
+      <Label text="Częstotliwość: niskie -> wysokie (od dołu do góry)"/>
+      <Label text="Czas: od lewej do prawej"/>
+      <Label text="Skala: auto-kontrast (5-98 percentyl)"/>
+      <CheckBox fx:id="showBandsCheckBox" text="Pokaż strefy" selected="true"/>
+    </HBox>
+    <Label text="Strefy: Bass 20-120 Hz | Low-mid 120-500 Hz | Mid 500-2000 Hz | High 2000-10000 Hz"/>
 
-    <GridPane hgap="12.0" vgap="8.0">
-      <Label text="Postęp FFT:" GridPane.columnIndex="0" GridPane.rowIndex="0"/>
-      <ProgressBar fx:id="fftProgressBar" progress="0.0" prefWidth="220.0" GridPane.columnIndex="1" GridPane.rowIndex="0"/>
-      <Label fx:id="fftProgressLabel" text="0%" GridPane.columnIndex="2" GridPane.rowIndex="0"/>
-    </GridPane>
+    <HBox spacing="16.0">
+      <Label text="FFT:"/>
+      <ProgressIndicator fx:id="fftBusyIndicator" visible="false" managed="false" prefWidth="22.0" prefHeight="22.0" progress="-1.0"/>
+      <Label text="Spektrogram:"/>
+      <ProgressIndicator fx:id="spectrogramBusyIndicator" visible="false" managed="false" prefWidth="22.0" prefHeight="22.0" progress="-1.0"/>
+    </HBox>
 
     <GridPane hgap="12.0" vgap="8.0">
       <Label text="FFT peak (Hz):" GridPane.columnIndex="0" GridPane.rowIndex="0"/>
@@ -44,11 +60,11 @@
     </GridPane>
   </VBox>
 
-  <VBox spacing="10.0" prefWidth="280.0">
+  <VBox spacing="10.0" prefWidth="320.0" minWidth="300.0">
     <Label text="Informacje o pliku"/>
     <GridPane hgap="10.0" vgap="6.0">
       <Label text="Nazwa:" GridPane.columnIndex="0" GridPane.rowIndex="0"/>
-      <Label fx:id="fileNameLabel" text="—" GridPane.columnIndex="1" GridPane.rowIndex="0"/>
+      <Label fx:id="fileNameLabel" text="—" wrapText="true" maxWidth="180.0" GridPane.columnIndex="1" GridPane.rowIndex="0"/>
       <Label text="Sample rate (Hz):" GridPane.columnIndex="0" GridPane.rowIndex="1"/>
       <Label fx:id="sampleRateLabel" text="—" GridPane.columnIndex="1" GridPane.rowIndex="1"/>
       <Label text="Kanały:" GridPane.columnIndex="0" GridPane.rowIndex="2"/>
@@ -71,6 +87,6 @@
     </GridPane>
 
     <Label text="Status / log"/>
-    <ListView fx:id="statusListView" prefHeight="420.0"/>
+    <ListView fx:id="statusListView" prefHeight="420.0" VBox.vgrow="ALWAYS"/>
   </VBox>
 </HBox>

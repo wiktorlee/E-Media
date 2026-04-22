@@ -1,30 +1,34 @@
 package org.example.wavelio.controllers;
 
 import javafx.fxml.FXML;
+import javafx.collections.FXCollections;
 import javafx.scene.control.Alert;
 import javafx.scene.control.ListView;
 import javafx.scene.control.Button;
+import javafx.scene.control.CheckBox;
+import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
-import javafx.scene.control.ProgressBar;
+import javafx.scene.control.ProgressIndicator;
 import javafx.scene.control.TextField;
 import javafx.scene.control.ButtonType;
 import javafx.stage.FileChooser;
 import javafx.stage.Window;
 import org.example.wavelio.bus.EventBus;
 import org.example.wavelio.events.ErrorEvent;
-import org.example.wavelio.events.FFTProgressEvent;
 import org.example.wavelio.events.FFTResultEvent;
 import org.example.wavelio.events.FileSavedEvent;
 import org.example.wavelio.events.FileLoadedEvent;
 import org.example.wavelio.events.InfoMetadataParsedEvent;
 import org.example.wavelio.events.MetadataParsedEvent;
+import org.example.wavelio.events.SpectrogramReadyEvent;
 import org.example.wavelio.events.WaveformReadyEvent;
 import org.example.wavelio.facade.WavelioFacade;
-import org.example.wavelio.facade.WavelioFacadeImpl;
 import org.example.wavelio.model.FftAnalysisResult;
 import org.example.wavelio.model.InfoMetadata;
 import org.example.wavelio.model.WavMetadata;
+import org.example.wavelio.ui.SpectrogramCanvas;
 import org.example.wavelio.ui.WaveformCanvas;
+import org.example.wavelio.service.WindowType;
 
 import java.io.File;
 import java.nio.file.Path;
@@ -39,6 +43,12 @@ public class HelloController {
 
     @FXML
     private Button runFftButton;
+
+    @FXML
+    private Button runSpectrogramButton;
+
+    @FXML
+    private ComboBox<WindowType> spectrogramWindowTypeCombo;
 
     @FXML
     private Button cropButton;
@@ -77,16 +87,22 @@ public class HelloController {
     private Label peakDbLabel;
 
     @FXML
-    private ProgressBar fftProgressBar;
+    private ProgressIndicator fftBusyIndicator;
 
     @FXML
-    private Label fftProgressLabel;
+    private ProgressIndicator spectrogramBusyIndicator;
 
     @FXML
     private ListView<String> statusListView;
 
     @FXML
     private WaveformCanvas waveformCanvas;
+
+    @FXML
+    private SpectrogramCanvas spectrogramCanvas;
+
+    @FXML
+    private CheckBox showBandsCheckBox;
 
     @FXML
     private TextField infoInamField;
@@ -115,6 +131,7 @@ public class HelloController {
             fileNameLabel.setText(e.path().getFileName().toString());
             appendStatus("Wczytano plik: " + e.path().getFileName());
             runFftButton.setDisable(false);
+            runSpectrogramButton.setDisable(false);
             cropButton.setDisable(true);
             anonymizeButton.setDisable(false);
             saveButton.setDisable(false);
@@ -135,10 +152,17 @@ public class HelloController {
                 appendStatus("Waveform gotowy");
             }
         });
-        eventBus.subscribe(FFTProgressEvent.class, e -> applyFftProgress(e.percent()));
         eventBus.subscribe(FFTResultEvent.class, e -> {
             applyFftResult(e.spectrumData());
             appendStatus("FFT zakończone");
+            setFftBusy(false);
+        });
+        eventBus.subscribe(SpectrogramReadyEvent.class, e -> {
+            spectrogramCanvas.setSpectrogram(e.result());
+            statusLabel.setText("Spektrogram gotowy");
+            appendStatus("Spektrogram wygenerowany");
+            runSpectrogramButton.setDisable(false);
+            setSpectrogramBusy(false);
         });
         eventBus.subscribe(FileSavedEvent.class, e -> {
             statusLabel.setText("Zapisano: " + e.path().getFileName());
@@ -148,10 +172,23 @@ public class HelloController {
             statusLabel.setText("Błąd: " + e.message());
             appendStatus("Błąd: " + e.message());
             runFftButton.setDisable(false);
+            runSpectrogramButton.setDisable(false);
+            setFftBusy(false);
+            setSpectrogramBusy(false);
         });
 
         runFftButton.setDisable(true);
+        runSpectrogramButton.setDisable(true);
+        spectrogramWindowTypeCombo.setItems(FXCollections.observableArrayList(WindowType.values()));
+        spectrogramWindowTypeCombo.setValue(WindowType.HANN);
+        setFftBusy(false);
+        setSpectrogramBusy(false);
         waveformCanvas.setChannels(new double[0][0]);
+        spectrogramCanvas.setSpectrogram(null);
+        spectrogramCanvas.setShowBands(showBandsCheckBox.isSelected());
+        showBandsCheckBox.selectedProperty().addListener((obs, oldV, newV) ->
+            spectrogramCanvas.setShowBands(Boolean.TRUE.equals(newV))
+        );
         waveformCanvas.setSelectionListener(sel -> {
             currentSelection = sel;
             cropButton.setDisable(!(sel.present() && currentDurationSeconds > 0));
@@ -205,12 +242,6 @@ public class HelloController {
     private void clearFftLabels() {
         peakHzLabel.setText("—");
         peakDbLabel.setText("—");
-    }
-
-    private void applyFftProgress(int percent) {
-        int clamped = Math.max(0, Math.min(100, percent));
-        fftProgressBar.setProgress(clamped / 100.0);
-        fftProgressLabel.setText(clamped + "%");
     }
 
     private void applyWaveform(double[][] channels) {
@@ -285,8 +316,8 @@ public class HelloController {
             currentSelection = WaveformCanvas.OptionalSelection.empty();
             facade.loadFile(file.toPath());
         }
-        fftProgressBar.setProgress(0.0);
-        fftProgressLabel.setText("0%");
+        setFftBusy(false);
+        setSpectrogramBusy(false);
     }
 
     @FXML
@@ -294,9 +325,31 @@ public class HelloController {
         statusLabel.setText("FFT w toku...");
         runFftButton.setDisable(true);
         appendStatus("Uruchomiono FFT");
-        fftProgressBar.setProgress(0.0);
-        fftProgressLabel.setText("0%");
+        setFftBusy(true);
         facade.runFFT();
+    }
+
+    @FXML
+    protected void onRunSpectrogram() {
+        statusLabel.setText("Generowanie spektrogramu...");
+        runSpectrogramButton.setDisable(true);
+        appendStatus("Uruchomiono generowanie spektrogramu");
+        setSpectrogramBusy(true);
+        WindowType selected = spectrogramWindowTypeCombo.getValue();
+        if (selected == null) {
+            selected = WindowType.HANN;
+        }
+        facade.runSpectrogram(selected);
+    }
+
+    private void setFftBusy(boolean busy) {
+        fftBusyIndicator.setManaged(busy);
+        fftBusyIndicator.setVisible(busy);
+    }
+
+    private void setSpectrogramBusy(boolean busy) {
+        spectrogramBusyIndicator.setManaged(busy);
+        spectrogramBusyIndicator.setVisible(busy);
     }
 
     private void appendStatus(String message) {
@@ -308,17 +361,14 @@ public class HelloController {
     }
 
     private void pushInfoOverrideToFacade() {
-        if (!(facade instanceof WavelioFacadeImpl impl)) {
-            return;
-        }
         InfoMetadata info = new InfoMetadata();
         if (!infoInamField.getText().isBlank()) info.put("INAM", infoInamField.getText());
         if (!infoIartField.getText().isBlank()) info.put("IART", infoIartField.getText());
         if (!infoIcmtField.getText().isBlank()) info.put("ICMT", infoIcmtField.getText());
         if (info.isEmpty()) {
-            impl.setPendingInfoOverride(Optional.empty());
+            facade.setPendingInfoOverride(Optional.empty());
         } else {
-            impl.setPendingInfoOverride(Optional.of(info));
+            facade.setPendingInfoOverride(Optional.of(info));
         }
     }
 
