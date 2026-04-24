@@ -10,6 +10,7 @@ import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.ProgressIndicator;
 import javafx.scene.control.TextField;
+import javafx.scene.control.TextArea;
 import javafx.scene.control.ButtonType;
 import javafx.stage.FileChooser;
 import javafx.stage.Window;
@@ -22,10 +23,12 @@ import org.example.wavelio.events.InfoMetadataParsedEvent;
 import org.example.wavelio.events.MetadataParsedEvent;
 import org.example.wavelio.events.SpectrogramReadyEvent;
 import org.example.wavelio.events.WaveformReadyEvent;
+import org.example.wavelio.events.XmpMetadataParsedEvent;
 import org.example.wavelio.facade.WavelioFacade;
 import org.example.wavelio.model.FftAnalysisResult;
 import org.example.wavelio.model.InfoMetadata;
 import org.example.wavelio.model.WavMetadata;
+import org.example.wavelio.model.XmpMetadata;
 import org.example.wavelio.ui.SpectrogramCanvas;
 import org.example.wavelio.ui.WaveformCanvas;
 import org.example.wavelio.service.WindowType;
@@ -113,6 +116,9 @@ public class HelloController {
     @FXML
     private TextField infoIcmtField;
 
+    @FXML
+    private TextArea xmpRawTextArea;
+
     private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm:ss");
 
     private WavelioFacade facade;
@@ -120,6 +126,7 @@ public class HelloController {
     private double currentDurationSeconds;
     private WaveformCanvas.OptionalSelection currentSelection = WaveformCanvas.OptionalSelection.empty();
     private Optional<InfoMetadata> currentInfo = Optional.empty();
+    private String currentXmpChunkId = "XMP ";
 
     public void setFacade(WavelioFacade facade) {
         this.facade = facade;
@@ -145,6 +152,10 @@ public class HelloController {
         eventBus.subscribe(InfoMetadataParsedEvent.class, e -> {
             applyInfo(e.info());
             appendStatus("Metadane INFO gotowe");
+        });
+        eventBus.subscribe(XmpMetadataParsedEvent.class, e -> {
+            applyXmp(e.xmp());
+            appendStatus("Metadane XMP gotowe");
         });
         eventBus.subscribe(WaveformReadyEvent.class, e -> {
             applyWaveform(e.channels());
@@ -201,6 +212,8 @@ public class HelloController {
         infoInamField.textProperty().addListener((obs, o, n) -> pushInfoOverrideToFacade());
         infoIartField.textProperty().addListener((obs, o, n) -> pushInfoOverrideToFacade());
         infoIcmtField.textProperty().addListener((obs, o, n) -> pushInfoOverrideToFacade());
+        xmpRawTextArea.setEditable(true);
+        xmpRawTextArea.textProperty().addListener((obs, o, n) -> pushXmpOverrideToFacade());
     }
 
     private void applyMetadata(WavMetadata m) {
@@ -218,6 +231,16 @@ public class HelloController {
         infoIartField.setText(currentInfo.flatMap(m -> m.get("IART")).orElse(""));
         infoIcmtField.setText(currentInfo.flatMap(m -> m.get("ICMT")).orElse(""));
         pushInfoOverrideToFacade();
+    }
+
+    private void applyXmp(Optional<XmpMetadata> xmp) {
+        String text = xmp
+            .filter(v -> !v.isEmpty())
+            .map(v -> v.xml())
+            .orElse("Brak metadanych XMP w pliku.");
+        currentXmpChunkId = xmp.map(XmpMetadata::chunkId).orElse("XMP ");
+        xmpRawTextArea.setText(text);
+        pushXmpOverrideToFacade();
     }
 
     private void applyFftResult(FftAnalysisResult result) {
@@ -370,6 +393,20 @@ public class HelloController {
         } else {
             facade.setPendingInfoOverride(Optional.of(info));
         }
+    }
+
+    private void pushXmpOverrideToFacade() {
+        String raw = xmpRawTextArea.getText();
+        if (raw == null) {
+            facade.setPendingXmpOverride(Optional.empty());
+            return;
+        }
+        String trimmed = raw.trim();
+        if (trimmed.isEmpty() || "Brak metadanych XMP w pliku.".equals(trimmed)) {
+            facade.setPendingXmpOverride(Optional.empty());
+            return;
+        }
+        facade.setPendingXmpOverride(Optional.of(new XmpMetadata(currentXmpChunkId, raw)));
     }
 
     private static String suggestSaveAsName(Path current) {

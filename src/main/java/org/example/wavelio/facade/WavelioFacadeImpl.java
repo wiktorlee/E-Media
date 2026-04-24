@@ -12,11 +12,13 @@ import org.example.wavelio.events.InfoMetadataParsedEvent;
 import org.example.wavelio.events.MetadataParsedEvent;
 import org.example.wavelio.events.SpectrogramReadyEvent;
 import org.example.wavelio.events.WaveformReadyEvent;
+import org.example.wavelio.events.XmpMetadataParsedEvent;
 import org.example.wavelio.model.FftAnalysisResult;
 import org.example.wavelio.model.InfoMetadata;
 import org.example.wavelio.model.LibraryEntry;
 import org.example.wavelio.model.SpectrogramResult;
 import org.example.wavelio.model.WavMetadata;
+import org.example.wavelio.model.XmpMetadata;
 import org.example.wavelio.service.FFTService;
 import org.example.wavelio.service.InfoChunkService;
 import org.example.wavelio.service.StftService;
@@ -24,6 +26,7 @@ import org.example.wavelio.service.WavParseService;
 import org.example.wavelio.service.WavEditService;
 import org.example.wavelio.service.WaveformService;
 import org.example.wavelio.service.WindowType;
+import org.example.wavelio.service.XmpChunkService;
 import org.example.wavelio.repository.AnalysisHistoryRepository;
 import org.example.wavelio.repository.LibraryRepository;
 import org.example.wavelio.repository.SqliteAnalysisHistoryRepository;
@@ -51,6 +54,7 @@ public final class WavelioFacadeImpl implements WavelioFacade {
     private final FFTService fftService;
     private final WaveformService waveformService;
     private final InfoChunkService infoChunkService;
+    private final XmpChunkService xmpChunkService;
     private final WavEditService wavEditService;
     private final StftService stftService;
 
@@ -62,11 +66,13 @@ public final class WavelioFacadeImpl implements WavelioFacade {
     private volatile Path cachedPcmPath;
 
     private volatile Optional<InfoMetadata> currentInfo = Optional.empty();
+    private volatile Optional<XmpMetadata> currentXmp = Optional.empty();
     private volatile SpectrogramResult currentSpectrogram;
 
     private volatile Optional<WavEditService.CropRangeMs> pendingCrop = Optional.empty();
     private volatile boolean pendingAnonymize;
     private volatile Optional<InfoMetadata> pendingInfoOverride = Optional.empty();
+    private volatile Optional<XmpMetadata> pendingXmpOverride = Optional.empty();
 
     WavelioFacadeImpl(
         EventBus eventBus,
@@ -77,6 +83,7 @@ public final class WavelioFacadeImpl implements WavelioFacade {
         FFTService fftService,
         WaveformService waveformService,
         InfoChunkService infoChunkService,
+        XmpChunkService xmpChunkService,
         WavEditService wavEditService,
         StftService stftService
     ) {
@@ -88,6 +95,7 @@ public final class WavelioFacadeImpl implements WavelioFacade {
         this.fftService = fftService;
         this.waveformService = waveformService;
         this.infoChunkService = infoChunkService;
+        this.xmpChunkService = xmpChunkService;
         this.wavEditService = wavEditService;
         this.stftService = stftService;
     }
@@ -110,6 +118,7 @@ public final class WavelioFacadeImpl implements WavelioFacade {
         FFTService fftService = new FFTService();
         WaveformService waveformService = new WaveformService();
         InfoChunkService infoChunkService = new InfoChunkService();
+        XmpChunkService xmpChunkService = new XmpChunkService();
         WavEditService wavEditService = new WavEditService();
         StftService stftService = new StftService();
         return new WavelioFacadeImpl(
@@ -121,6 +130,7 @@ public final class WavelioFacadeImpl implements WavelioFacade {
             fftService,
             waveformService,
             infoChunkService,
+            xmpChunkService,
             wavEditService,
             stftService
         );
@@ -147,12 +157,15 @@ public final class WavelioFacadeImpl implements WavelioFacade {
             cachedPcmPath = null;
             currentPrecomputedWaveform = null;
             currentSpectrogram = null;
+            currentXmp = Optional.empty();
             pendingCrop = Optional.empty();
             pendingAnonymize = false;
             pendingInfoOverride = Optional.empty();
+            pendingXmpOverride = Optional.empty();
             eventBus.publish(value);
             eventBus.publish(new MetadataParsedEvent(value.metadata()));
             startInfoTask(value.path());
+            startXmpTask(value.path());
             startWaveformTask(value.path());
         });
         task.setOnFailed(ev -> eventBus.publish(new ErrorEvent(
@@ -311,11 +324,12 @@ public final class WavelioFacadeImpl implements WavelioFacade {
         Optional<WavEditService.CropRangeMs> crop = pendingCrop;
         boolean anonymize = pendingAnonymize;
         Optional<InfoMetadata> infoOverride = pendingInfoOverride;
+        Optional<XmpMetadata> xmpOverride = pendingXmpOverride;
 
         Task<Path> task = new Task<>() {
             @Override
             protected Path call() throws Exception {
-                wavEditService.saveEdited(src, path, crop, anonymize, infoOverride);
+                wavEditService.saveEdited(src, path, crop, anonymize, infoOverride, xmpOverride);
                 return path;
             }
         };
@@ -345,6 +359,11 @@ public final class WavelioFacadeImpl implements WavelioFacade {
     @Override
     public Optional<SpectrogramResult> getSpectrogramData() {
         return Optional.ofNullable(currentSpectrogram);
+    }
+
+    @Override
+    public Optional<XmpMetadata> getXmpData() {
+        return currentXmp;
     }
 
     private void startWaveformTask(Path path) {
@@ -410,8 +429,41 @@ public final class WavelioFacadeImpl implements WavelioFacade {
         executor.execute(task);
     }
 
+    private void startXmpTask(Path path) {
+        Task<Optional<XmpMetadata>> task = new Task<>() {
+            @Override
+            protected Optional<XmpMetadata> call() throws Exception {
+                return xmpChunkService.readXmp(path);
+            }
+        };
+        task.setOnSucceeded(e -> {
+            if (!Objects.equals(path, currentPath)) {
+                return;
+            }
+            currentXmp = Optional.ofNullable(task.getValue()).orElse(Optional.empty());
+            eventBus.publish(new XmpMetadataParsedEvent(currentXmp));
+        });
+        task.setOnFailed(e -> {
+            if (!Objects.equals(path, currentPath)) {
+                return;
+            }
+            currentXmp = Optional.empty();
+            eventBus.publish(new XmpMetadataParsedEvent(Optional.empty()));
+            eventBus.publish(new ErrorEvent(
+                task.getException() != null ? task.getException().getMessage() : "Nie udało się odczytać metadanych XMP",
+                task.getException()
+            ));
+        });
+        executor.execute(task);
+    }
+
     @Override
     public void setPendingInfoOverride(Optional<InfoMetadata> info) {
         pendingInfoOverride = info == null ? Optional.empty() : info;
+    }
+
+    @Override
+    public void setPendingXmpOverride(Optional<XmpMetadata> xmp) {
+        pendingXmpOverride = xmp == null ? Optional.empty() : xmp;
     }
 }

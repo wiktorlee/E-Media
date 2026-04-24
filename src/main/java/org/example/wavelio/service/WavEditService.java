@@ -1,6 +1,7 @@
 package org.example.wavelio.service;
 
 import org.example.wavelio.model.InfoMetadata;
+import org.example.wavelio.model.XmpMetadata;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -32,7 +33,8 @@ public final class WavEditService {
         Path destinationWav,
         Optional<CropRangeMs> cropRange,
         boolean anonymize,
-        Optional<InfoMetadata> infoOverride
+        Optional<InfoMetadata> infoOverride,
+        Optional<XmpMetadata> xmpOverride
     ) throws IOException, WavFormatException {
         if (sourceWav == null || destinationWav == null) {
             throw new IllegalArgumentException("Paths cannot be null");
@@ -41,7 +43,7 @@ public final class WavEditService {
             throw new IOException("Źródłowy plik nie istnieje: " + sourceWav);
         }
 
-        boolean requiresRewrite = anonymize || cropRange.isPresent() || infoOverride.isPresent();
+        boolean requiresRewrite = anonymize || cropRange.isPresent() || infoOverride.isPresent() || xmpOverride.isPresent();
         if (!requiresRewrite) {
             copyPossiblyOverwriting(sourceWav, destinationWav);
             return;
@@ -60,7 +62,7 @@ public final class WavEditService {
             }
         }
 
-        writeRebuiltMinimal(sourceWav, actualDest, cropRange, infoOverride);
+        writeRebuiltMinimal(sourceWav, actualDest, cropRange, infoOverride, xmpOverride, anonymize);
 
         if (overwrite) {
             try {
@@ -86,7 +88,9 @@ public final class WavEditService {
         Path sourceWav,
         Path destinationWav,
         Optional<CropRangeMs> cropRange,
-        Optional<InfoMetadata> infoOverride
+        Optional<InfoMetadata> infoOverride,
+        Optional<XmpMetadata> xmpOverride,
+        boolean anonymize
     ) throws IOException, WavFormatException {
         RiffChunkScanner scanner = new RiffChunkScanner();
         RiffChunkScanner.ScanResult scan = scanner.scanWave(sourceWav);
@@ -138,10 +142,24 @@ public final class WavEditService {
             infoChunkBytes = infoChunkService.buildInfoListChunk(infoToWrite.get());
         }
 
-        // Build RIFF/WAVE: header + fmt + (info) + data
+        // XMP: preserve unless anonymization is requested.
+        byte[] xmpChunkBytes = new byte[0];
+        if (!anonymize) {
+            XmpChunkService xmpChunkService = new XmpChunkService();
+            Optional<XmpMetadata> xmpToWrite = xmpOverride;
+            if (xmpToWrite.isEmpty()) {
+                xmpToWrite = xmpChunkService.readXmp(sourceWav);
+            }
+            if (xmpToWrite.isPresent() && !xmpToWrite.get().isEmpty()) {
+                xmpChunkBytes = xmpChunkService.buildXmpChunk(xmpToWrite.get());
+            }
+        }
+
+        // Build RIFF/WAVE: header + fmt + (info) + (xmp) + data
         long riffPayloadSize = 4L; // "WAVE"
         riffPayloadSize += fmtBytes.length;
         riffPayloadSize += infoChunkBytes.length;
+        riffPayloadSize += xmpChunkBytes.length;
         riffPayloadSize += 8L + croppedDataSize + ((croppedDataSize & 1L) == 1L ? 1L : 0L);
 
         long riffSize = riffPayloadSize; // size field is bytes after 'RIFF' + size
@@ -160,6 +178,9 @@ public final class WavEditService {
             out.write(ByteBuffer.wrap(fmtBytes));
             if (infoChunkBytes.length > 0) {
                 out.write(ByteBuffer.wrap(infoChunkBytes));
+            }
+            if (xmpChunkBytes.length > 0) {
+                out.write(ByteBuffer.wrap(xmpChunkBytes));
             }
 
             // data header

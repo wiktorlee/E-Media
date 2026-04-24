@@ -2,6 +2,7 @@ package org.example.wavelio.service;
 
 import org.example.wavelio.model.InfoMetadata;
 import org.example.wavelio.model.WavMetadata;
+import org.example.wavelio.model.XmpMetadata;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -56,6 +57,7 @@ class Phase4WavEditTest {
             out,
             Optional.of(new WavEditService.CropRangeMs(0, 50)), // 0.05s @ 1000Hz => 50 frames
             true,
+            Optional.empty(),
             Optional.empty()
         );
 
@@ -72,7 +74,7 @@ class Phase4WavEditTest {
 
         Path out = dir.resolve("anon.wav");
         WavEditService edit = new WavEditService();
-        edit.saveEdited(wav, out, Optional.empty(), true, Optional.empty());
+        edit.saveEdited(wav, out, Optional.empty(), true, Optional.empty(), Optional.empty());
 
         RiffChunkScanner.ScanResult scan = new RiffChunkScanner().scanWave(out);
         assertTrue(scan.firstChunk("fmt ").isPresent());
@@ -80,6 +82,85 @@ class Phase4WavEditTest {
         assertTrue(!scan.listChunksOfType("INFO").isEmpty());
         // should not keep JUNK
         assertTrue(scan.firstChunk("JUNK").isEmpty());
+    }
+
+    @Test
+    void wavEditSavePreservesXmpByDefault(@TempDir Path dir) throws Exception {
+        Path wav = dir.resolve("src.wav");
+        writePcmWavWithInfoAndJunk(
+            wav,
+            8000,
+            1,
+            16,
+            10,
+            new InfoMetadata(),
+            Optional.of("<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"/>")
+        );
+
+        Path out = dir.resolve("saved.wav");
+        WavEditService edit = new WavEditService();
+        edit.saveEdited(
+            wav,
+            out,
+            Optional.of(new WavEditService.CropRangeMs(0, 5)),
+            false,
+            Optional.empty(),
+            Optional.empty()
+        );
+
+        Optional<XmpMetadata> xmp = new XmpChunkService().readXmp(out);
+        assertTrue(xmp.isPresent());
+        assertTrue(xmp.get().xml().contains("x:xmpmeta"));
+    }
+
+    @Test
+    void wavEditAnonymizeRemovesXmp(@TempDir Path dir) throws Exception {
+        Path wav = dir.resolve("src.wav");
+        writePcmWavWithInfoAndJunk(
+            wav,
+            8000,
+            1,
+            16,
+            10,
+            new InfoMetadata(),
+            Optional.of("<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"/>")
+        );
+
+        Path out = dir.resolve("anon.wav");
+        WavEditService edit = new WavEditService();
+        edit.saveEdited(wav, out, Optional.empty(), true, Optional.empty(), Optional.empty());
+
+        Optional<XmpMetadata> xmp = new XmpChunkService().readXmp(out);
+        assertTrue(xmp.isEmpty());
+    }
+
+    @Test
+    void wavEditUsesProvidedXmpOverride(@TempDir Path dir) throws Exception {
+        Path wav = dir.resolve("src.wav");
+        writePcmWavWithInfoAndJunk(
+            wav,
+            8000,
+            1,
+            16,
+            10,
+            new InfoMetadata(),
+            Optional.of("<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><old>1</old></x:xmpmeta>")
+        );
+
+        Path out = dir.resolve("edited.wav");
+        WavEditService edit = new WavEditService();
+        edit.saveEdited(
+            wav,
+            out,
+            Optional.empty(),
+            false,
+            Optional.empty(),
+            Optional.of(new XmpMetadata("XMP ", "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><new>2</new></x:xmpmeta>"))
+        );
+
+        Optional<XmpMetadata> xmp = new XmpChunkService().readXmp(out);
+        assertTrue(xmp.isPresent());
+        assertTrue(xmp.get().xml().contains("<new>2</new>"));
     }
 
     private static void writePcmWavWithInfoAndJunk(
@@ -90,6 +171,18 @@ class Phase4WavEditTest {
         int numFrames,
         InfoMetadata info
     ) throws IOException {
+        writePcmWavWithInfoAndJunk(path, sampleRate, channels, bitsPerSample, numFrames, info, Optional.empty());
+    }
+
+    private static void writePcmWavWithInfoAndJunk(
+        Path path,
+        int sampleRate,
+        int channels,
+        int bitsPerSample,
+        int numFrames,
+        InfoMetadata info,
+        Optional<String> xmpXml
+    ) throws IOException {
         int bytesPerFrame = channels * (bitsPerSample / 8);
         int dataSize = numFrames * bytesPerFrame;
         byte[] dataPayload = new byte[dataSize];
@@ -98,12 +191,16 @@ class Phase4WavEditTest {
         byte[] dataChunk = buildDataChunk(dataPayload);
         byte[] junkChunk = buildArbitraryChunk("JUNK", new byte[]{1, 2, 3}); // odd => pad
         byte[] infoChunk = new InfoChunkService().buildInfoListChunk(info);
+        byte[] xmpChunk = xmpXml
+            .map(v -> new XmpChunkService().buildXmpChunk(new XmpMetadata("XMP ", v)))
+            .orElse(new byte[0]);
 
         byte[] payload = concat(
             "WAVE".getBytes(java.nio.charset.StandardCharsets.ISO_8859_1),
             fmtChunk,
             junkChunk,
             infoChunk,
+            xmpChunk,
             dataChunk
         );
         int riffSize = payload.length;

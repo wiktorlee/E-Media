@@ -79,6 +79,26 @@ class StftServiceTest {
         assertTrue(Math.abs(hannPeak - hammingPeak) > 1e-6);
     }
 
+    @Test
+    void includesLastPartialWindowViaZeroPadding() {
+        int sampleRate = 8000;
+        int windowSize = 256;
+        int hopSize = 128;
+        short[] mono = new short[300];
+
+        SpectrogramResult result = service.analyzeMonoFromPcm16(
+            new short[][] { mono },
+            sampleRate,
+            windowSize,
+            hopSize,
+            WindowType.HANN
+        );
+
+        assertEquals(2, result.magnitudesDb().length);
+        assertEquals(0.0, result.timeAxisSeconds()[0], 1e-9);
+        assertEquals((300 - 256) / (double) sampleRate, result.timeAxisSeconds()[1], 1e-9);
+    }
+
     private static double[] averageAcrossFrames(double[][] matrix) {
         int frames = matrix.length;
         int bins = matrix[0].length;

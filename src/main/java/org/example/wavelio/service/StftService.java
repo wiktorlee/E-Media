@@ -93,7 +93,8 @@ public final class StftService {
         if (sampleCount <= windowSize) {
             return 1;
         }
-        return ((sampleCount - windowSize) / hopSize) + 1;
+        int remaining = sampleCount - windowSize;
+        return ((remaining + hopSize - 1) / hopSize) + 1;
     }
 
     private static double[] mixToMono(short[][] channels, int frames) {

@@ -9,6 +9,7 @@
 <?import javafx.scene.control.ProgressIndicator?>
 <?import javafx.scene.control.Separator?>
 <?import javafx.scene.control.TextField?>
+<?import javafx.scene.control.TextArea?>
 <?import javafx.scene.layout.FlowPane?>
 <?import javafx.scene.layout.HBox?>
 <?import javafx.scene.layout.GridPane?>
@@ -85,6 +86,10 @@
       <Label text="Komentarz (ICMT):" GridPane.columnIndex="0" GridPane.rowIndex="2"/>
       <TextField fx:id="infoIcmtField" promptText="—" GridPane.columnIndex="1" GridPane.rowIndex="2"/>
     </GridPane>
+
+    <Separator/>
+    <Label text="XMP (XML)"/>
+    <TextArea fx:id="xmpRawTextArea" prefRowCount="8" wrapText="true"/>
 
     <Label text="Status / log"/>
     <ListView fx:id="statusListView" prefHeight="420.0" VBox.vgrow="ALWAYS"/>

@@ -4,6 +4,7 @@ import org.example.wavelio.model.LibraryEntry;
 import org.example.wavelio.model.InfoMetadata;
 import org.example.wavelio.model.SpectrogramResult;
 import org.example.wavelio.model.WavMetadata;
+import org.example.wavelio.model.XmpMetadata;
 import org.example.wavelio.service.WindowType;
 
 import java.nio.file.Path;
@@ -32,9 +33,13 @@ public interface WavelioFacade {
 
     void setPendingInfoOverride(Optional<InfoMetadata> info);
 
+    void setPendingXmpOverride(Optional<XmpMetadata> xmp);
+
     List<LibraryEntry> getLibraryEntries();
 
     Optional<double[][]> getWaveformData();
 
     Optional<SpectrogramResult> getSpectrogramData();
+
+    Optional<XmpMetadata> getXmpData();
 }
