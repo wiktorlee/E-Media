@@ -26,6 +26,8 @@
   <VBox spacing="12.0" prefWidth="860.0" HBox.hgrow="ALWAYS">
     <FlowPane hgap="8.0" vgap="8.0" prefWrapLength="860.0">
       <Button fx:id="openButton" text="Otwórz plik WAV…" onAction="#onOpenWav"/>
+      <Button fx:id="playButton" text="Play" onAction="#onPlay" disable="true"/>
+      <Button fx:id="stopButton" text="Stop" onAction="#onStop" disable="true"/>
       <Button fx:id="runFftButton" text="Uruchom FFT" onAction="#onRunFft"/>
       <ComboBox fx:id="spectrogramWindowTypeCombo" prefWidth="120.0"/>
       <Button fx:id="runSpectrogramButton" text="Generuj spektrogram" onAction="#onRunSpectrogram"/>
@@ -35,6 +37,7 @@
       <Button fx:id="saveAsButton" text="Zapisz jako…" onAction="#onSaveAs" disable="true"/>
     </FlowPane>
     <Label fx:id="statusLabel" text="Wybierz plik WAV, aby zobaczyć atrybuty." wrapText="true"/>
+    <Label fx:id="playbackTimeLabel" text="00:00 / 00:00"/>
 
     <WaveformCanvas fx:id="waveformCanvas" width="720.0" height="180.0"/>
     <SpectrogramCanvas fx:id="spectrogramCanvas" width="720.0" height="180.0"/>

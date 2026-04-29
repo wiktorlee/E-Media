@@ -10,6 +10,8 @@ import org.example.wavelio.events.FileSavedEvent;
 import org.example.wavelio.events.FileLoadedEvent;
 import org.example.wavelio.events.InfoMetadataParsedEvent;
 import org.example.wavelio.events.MetadataParsedEvent;
+import org.example.wavelio.events.PlaybackPositionEvent;
+import org.example.wavelio.events.PlaybackStateChangedEvent;
 import org.example.wavelio.events.SpectrogramReadyEvent;
 import org.example.wavelio.events.WaveformReadyEvent;
 import org.example.wavelio.events.XmpMetadataParsedEvent;
@@ -21,6 +23,8 @@ import org.example.wavelio.model.WavMetadata;
 import org.example.wavelio.model.XmpMetadata;
 import org.example.wavelio.service.FFTService;
 import org.example.wavelio.service.InfoChunkService;
+import org.example.wavelio.service.PlaybackService;
+import org.example.wavelio.service.PlaybackState;
 import org.example.wavelio.service.StftService;
 import org.example.wavelio.service.WavParseService;
 import org.example.wavelio.service.WavEditService;
@@ -57,6 +61,7 @@ public final class WavelioFacadeImpl implements WavelioFacade {
     private final XmpChunkService xmpChunkService;
     private final WavEditService wavEditService;
     private final StftService stftService;
+    private final PlaybackService playbackService;
 
     private volatile WavMetadata currentMetadata;
     private volatile Path currentPath;
@@ -85,7 +90,8 @@ public final class WavelioFacadeImpl implements WavelioFacade {
         InfoChunkService infoChunkService,
         XmpChunkService xmpChunkService,
         WavEditService wavEditService,
-        StftService stftService
+        StftService stftService,
+        PlaybackService playbackService
     ) {
         this.eventBus = eventBus;
         this.executor = executor;
@@ -98,6 +104,7 @@ public final class WavelioFacadeImpl implements WavelioFacade {
         this.xmpChunkService = xmpChunkService;
         this.wavEditService = wavEditService;
         this.stftService = stftService;
+        this.playbackService = playbackService;
     }
 
     public static WavelioFacadeImpl create(EventBus eventBus) {
@@ -121,6 +128,7 @@ public final class WavelioFacadeImpl implements WavelioFacade {
         XmpChunkService xmpChunkService = new XmpChunkService();
         WavEditService wavEditService = new WavEditService();
         StftService stftService = new StftService();
+        PlaybackService playbackService = new PlaybackService();
         return new WavelioFacadeImpl(
             eventBus,
             executor,
@@ -132,7 +140,8 @@ public final class WavelioFacadeImpl implements WavelioFacade {
             infoChunkService,
             xmpChunkService,
             wavEditService,
-            stftService
+            stftService,
+            playbackService
         );
     }
 
@@ -162,6 +171,9 @@ public final class WavelioFacadeImpl implements WavelioFacade {
             pendingAnonymize = false;
             pendingInfoOverride = Optional.empty();
             pendingXmpOverride = Optional.empty();
+            playbackService.stop();
+            eventBus.publish(new PlaybackPositionEvent(0L, Math.round(value.metadata().durationSeconds() * 1000.0)));
+            eventBus.publish(new PlaybackStateChangedEvent(PlaybackState.IDLE));
             eventBus.publish(value);
             eventBus.publish(new MetadataParsedEvent(value.metadata()));
             startInfoTask(value.path());
@@ -281,10 +293,36 @@ public final class WavelioFacadeImpl implements WavelioFacade {
 
     @Override
     public void play() {
+        Path path = currentPath;
+        WavMetadata metadata = currentMetadata;
+        if (path == null || metadata == null) {
+            eventBus.publish(new ErrorEvent("Najpierw wczytaj plik WAV.", null));
+            return;
+        }
+        playbackService.play(path, new PlaybackService.PlaybackListener() {
+            @Override
+            public void onStateChanged(PlaybackState state) {
+                eventBus.publish(new PlaybackStateChangedEvent(state));
+            }
+
+            @Override
+            public void onPositionChanged(long currentMs, long durationMs) {
+                eventBus.publish(new PlaybackPositionEvent(currentMs, durationMs));
+            }
+
+            @Override
+            public void onError(String message, Throwable error) {
+                eventBus.publish(new ErrorEvent(message, error));
+            }
+        });
     }
 
     @Override
     public void stop() {
+        playbackService.stop();
+        long durationMs = currentMetadata == null ? 0L : Math.round(currentMetadata.durationSeconds() * 1000.0);
+        eventBus.publish(new PlaybackPositionEvent(0L, durationMs));
+        eventBus.publish(new PlaybackStateChangedEvent(PlaybackState.STOPPED));
     }
 
     @Override
@@ -321,6 +359,7 @@ public final class WavelioFacadeImpl implements WavelioFacade {
             eventBus.publish(new ErrorEvent("Najpierw wczytaj plik WAV.", null));
             return;
         }
+        playbackService.stop();
         Optional<WavEditService.CropRangeMs> crop = pendingCrop;
         boolean anonymize = pendingAnonymize;
         Optional<InfoMetadata> infoOverride = pendingInfoOverride;

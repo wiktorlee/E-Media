@@ -21,6 +21,8 @@ import org.example.wavelio.events.FileSavedEvent;
 import org.example.wavelio.events.FileLoadedEvent;
 import org.example.wavelio.events.InfoMetadataParsedEvent;
 import org.example.wavelio.events.MetadataParsedEvent;
+import org.example.wavelio.events.PlaybackPositionEvent;
+import org.example.wavelio.events.PlaybackStateChangedEvent;
 import org.example.wavelio.events.SpectrogramReadyEvent;
 import org.example.wavelio.events.WaveformReadyEvent;
 import org.example.wavelio.events.XmpMetadataParsedEvent;
@@ -32,6 +34,7 @@ import org.example.wavelio.model.XmpMetadata;
 import org.example.wavelio.ui.SpectrogramCanvas;
 import org.example.wavelio.ui.WaveformCanvas;
 import org.example.wavelio.service.WindowType;
+import org.example.wavelio.service.PlaybackState;
 
 import java.io.File;
 import java.nio.file.Path;
@@ -66,6 +69,12 @@ public class HelloController {
     private Button saveAsButton;
 
     @FXML
+    private Button playButton;
+
+    @FXML
+    private Button stopButton;
+
+    @FXML
     private Label statusLabel;
 
     @FXML
@@ -82,6 +91,9 @@ public class HelloController {
 
     @FXML
     private Label durationLabel;
+
+    @FXML
+    private Label playbackTimeLabel;
 
     @FXML
     private Label peakHzLabel;
@@ -143,6 +155,8 @@ public class HelloController {
             anonymizeButton.setDisable(false);
             saveButton.setDisable(false);
             saveAsButton.setDisable(false);
+            playButton.setDisable(false);
+            stopButton.setDisable(true);
             currentPath = e.path();
         });
         eventBus.subscribe(MetadataParsedEvent.class, e -> {
@@ -179,6 +193,8 @@ public class HelloController {
             statusLabel.setText("Zapisano: " + e.path().getFileName());
             appendStatus("Zapisano plik: " + e.path().getFileName());
         });
+        eventBus.subscribe(PlaybackStateChangedEvent.class, e -> applyPlaybackState(e.state()));
+        eventBus.subscribe(PlaybackPositionEvent.class, e -> applyPlaybackTime(e.currentMs(), e.durationMs()));
         eventBus.subscribe(ErrorEvent.class, e -> {
             statusLabel.setText("Błąd: " + e.message());
             appendStatus("Błąd: " + e.message());
@@ -208,6 +224,9 @@ public class HelloController {
         anonymizeButton.setDisable(true);
         saveButton.setDisable(true);
         saveAsButton.setDisable(true);
+        playButton.setDisable(true);
+        stopButton.setDisable(true);
+        playbackTimeLabel.setText("00:00 / 00:00");
 
         infoInamField.textProperty().addListener((obs, o, n) -> pushInfoOverrideToFacade());
         infoIartField.textProperty().addListener((obs, o, n) -> pushInfoOverrideToFacade());
@@ -365,6 +384,16 @@ public class HelloController {
         facade.runSpectrogram(selected);
     }
 
+    @FXML
+    protected void onPlay() {
+        facade.play();
+    }
+
+    @FXML
+    protected void onStop() {
+        facade.stop();
+    }
+
     private void setFftBusy(boolean busy) {
         fftBusyIndicator.setManaged(busy);
         fftBusyIndicator.setVisible(busy);
@@ -381,6 +410,34 @@ public class HelloController {
         if (statusListView.getItems().size() > 30) {
             statusListView.getItems().remove(statusListView.getItems().size() - 1);
         }
+    }
+
+    private void applyPlaybackState(PlaybackState state) {
+        if (state == PlaybackState.PLAYING) {
+            playButton.setDisable(true);
+            stopButton.setDisable(false);
+            statusLabel.setText("Odtwarzanie...");
+            return;
+        }
+        if (state == PlaybackState.ERROR) {
+            playButton.setDisable(currentPath == null);
+            stopButton.setDisable(true);
+            return;
+        }
+        playButton.setDisable(currentPath == null);
+        stopButton.setDisable(true);
+    }
+
+    private void applyPlaybackTime(long currentMs, long durationMs) {
+        playbackTimeLabel.setText(formatMs(currentMs) + " / " + formatMs(durationMs));
+    }
+
+    private static String formatMs(long ms) {
+        long safe = Math.max(0L, ms);
+        long totalSec = safe / 1000L;
+        long min = totalSec / 60L;
+        long sec = totalSec % 60L;
+        return String.format("%02d:%02d", min, sec);
     }
 
     private void pushInfoOverrideToFacade() {
